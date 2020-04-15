@@ -8,6 +8,7 @@ from PIL import Image
 import pytesseract
 import datetime
 import numpy as np
+import argparse
 import csv
 
 WHITE = (255, 255, 255)
@@ -53,6 +54,10 @@ def ocr_country_name(im, VOFF):
     cropped = im.crop( (HOFF, VOFF, HOFF+140, VOFF+21) )
     name = pytesseract.image_to_string(cropped)
     name = name.rstrip("_-— \n")
+    if not name:
+        # Try with a different mode
+        name = pytesseract.image_to_string(cropped, config='--psm 6')
+        name = name.rstrip("_-— \n")
     return name
 
 def detect_graph_starts(px, im):
@@ -170,8 +175,14 @@ def scale_zscore(pt, zticks):
     delta = pt - z_0
     return delta / pixelspan
 
+parser = argparse.ArgumentParser(description='Scrape EuroMOMO data from an image')
+parser.add_argument('png', help='EuroMOMO PNG for z-score data (from bulletin PDF)')
+parser.add_argument('--assume-italy', action='store_true',
+        help='In case of OCR failure on country name, assume the missing country is Italy')
+args = parser.parse_args()
+
 # Image load
-im = Image.open(sys.argv[1])
+im = Image.open(args.png)
 im = im.convert('RGB')
 px = im.load()
 
@@ -190,9 +201,21 @@ COUNTRIES = [ ocr_country_name(im, st) for st,_ in starts ]
 # Try to fill in failed OCR. Basically, see if its neighbors
 # are found in the full country list, and if so, infer that
 # the missing country must be between them.
+already_tried_italy = False
 for i in range(len(COUNTRIES)):
     if not COUNTRIES[i]:
         print("WARNING: Failed to OCR country name for graph %d" % i, file=sys.stderr)
+        if args.assume_italy:
+            if not already_tried_italy:
+                COUNTRIES[i] = 'Italy'
+                print("WARNING: Assuming it's Italy since you said so", file=sys.stderr)
+                already_tried_italy = True
+                continue
+            else:
+                print("ERROR: You said to assume it's Italy, but there are multiple "
+                      "missing countries. Something is wrong. Aborting!", file=sys.stderr)
+                sys.exit(1)
+
         # Attempt repair (!)
         candidate_1 = None
         candidate_2 = None
@@ -215,6 +238,14 @@ for i in range(len(COUNTRIES)):
             name = "FAILED_OCR_%02d" % i
             COUNTRIES[i] = name
             print("WARNING: Repair failed, using %s" % name, file=sys.stderr)
+    elif COUNTRIES[i] not in ALL_COUNTRIES:
+        print("WARNING: country name '%s' is not in the list of known countries. OCR error?" % COUNTRIES[i],
+                file=sys.stderr)
+        ocr_errors = {'Haly': 'Italy'}
+        if COUNTRIES[i] in ocr_errors:
+            print("WARNING: Repaired common OCR issue %s => %s" % (COUNTRIES[i], ocr_errors[COUNTRIES[i]]),
+                    file=sys.stderr)
+            COUNTRIES[i] = ocr_errors[COUNTRIES[i]]
 
 country_starts = dict(zip(COUNTRIES, starts))
 
@@ -257,11 +288,11 @@ for c in COUNTRIES:
 #   country,date,z_score,delay_z_score
 
 # Open CSV and write the header
-base, extension = os.path.splitext(sys.argv[1])
+base, extension = os.path.splitext(args.png)
 outfile_name = base + '.csv'
 of = open(outfile_name, 'w', newline='')
 wr = csv.writer(of)
-wr.writerow(['Country', 'Timestamp', 'Z_Score', 'Delay_Z_Score'])
+wr.writerow(['Country', 'Timestamp', 'Timestamp_Px', 'Z_Score', 'Z_Score_Px', 'Delay_Z_Score', 'Delay_Z_Score_Px'])
 
 for c in COUNTRIES:
     widths = country_widths[c]
@@ -272,14 +303,18 @@ for c in COUNTRIES:
     for x, g, b in points:
         x_time = scale_x_time(x, xticks)
         if not math.isnan(g):
+            g_str = str(g)
             g_zscore = str(scale_zscore(g, zticks))
         else:
+            g_str = "N/A"
             g_zscore = "N/A"
         if not math.isnan(b):
+            b_str = str(b)
             b_zscore = str(scale_zscore(b, zticks))
         else:
+            b_str = "N/A"
             b_zscore = "N/A"
 
-        wr.writerow([c, str(x_time), g_zscore, b_zscore])
+        wr.writerow([c, str(x_time), str(x), g_zscore, b_str, b_zscore])
 of.close()
 print("INFO: wrote output to %s" % outfile_name, file=sys.stderr)

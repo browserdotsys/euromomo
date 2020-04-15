@@ -36,10 +36,20 @@ Usage
 -----
 
 ```
-python euromomo.py <image>
+usage: euromomo.py [-h] [--assume-italy] png
+
+Scrape EuroMOMO data from an image
+
+positional arguments:
+  png             EuroMOMO PNG for z-score data (from bulletin PDF)
+
+optional arguments:
+  -h, --help      show this help message and exit
+  --assume-italy  In case of OCR failure on country name, assume the missing
+                  country is Italy
 ```
 
-Where `<image>` is a PNG extracted from the PDF bulletin. Output will be
+Where `png` is a PNG extracted from the PDF bulletin. Output will be
 written to a file with the same name as the input, but with `.csv`
 instead of `.png`.
 
