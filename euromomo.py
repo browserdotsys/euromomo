@@ -173,7 +173,9 @@ def scale_zscore(pt, zticks):
     pixelspan = z_4 - z_0
     # How many pixels from the x axis is our point?
     delta = pt - z_0
-    return delta / pixelspan
+    # each pixelspan = 4 z
+    z_score = (delta / pixelspan) * 4
+    return z_score
 
 parser = argparse.ArgumentParser(description='Scrape EuroMOMO data from an image')
 parser.add_argument('png', help='EuroMOMO PNG for z-score data (from bulletin PDF)')
@@ -315,6 +317,6 @@ for c in COUNTRIES:
             b_str = "N/A"
             b_zscore = "N/A"
 
-        wr.writerow([c, str(x_time), str(x), g_zscore, b_str, b_zscore])
+        wr.writerow([c, str(x_time), str(x), g_zscore, g_str, b_zscore, b_str])
 of.close()
 print("INFO: wrote output to %s" % outfile_name, file=sys.stderr)
